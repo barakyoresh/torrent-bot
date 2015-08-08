@@ -3,6 +3,7 @@ import json
 import urllib
 import datetime
 import time
+import bot_framework
 
 import xml.etree.ElementTree as ET
 from dateutil.relativedelta import relativedelta
@@ -15,14 +16,15 @@ client_port = '8080'
 timeout_for_params = 5
 client_user = 'admin'
 client_pass = 'password'
-torrent_emoji = [bot.Emoji.DIGIT_ONE_PLUS_COMBINING_ENCLOSING_KEYCAP,
-                 bot.Emoji.DIGIT_TWO_PLUS_COMBINING_ENCLOSING_KEYCAP,
-                 bot.Emoji.DIGIT_THREE_PLUS_COMBINING_ENCLOSING_KEYCAP,
-                 bot.Emoji.DIGIT_FOUR_PLUS_COMBINING_ENCLOSING_KEYCAP,
-                 bot.Emoji.DIGIT_FIVE_PLUS_COMBINING_ENCLOSING_KEYCAP,
-                 bot.Emoji.DIGIT_SIX_PLUS_COMBINING_ENCLOSING_KEYCAP,
-                 bot.Emoji.DIGIT_SEVEN_PLUS_COMBINING_ENCLOSING_KEYCAP,
-                 bot.Emoji.DIGIT_EIGHT_PLUS_COMBINING_ENCLOSING_KEYCAP]
+num_of_torrents = 8
+torrent_emoji = [bot_framework.Bot.Emoji.DIGIT_ONE_PLUS_COMBINING_ENCLOSING_KEYCAP,
+                 bot_framework.Bot.Emoji.DIGIT_TWO_PLUS_COMBINING_ENCLOSING_KEYCAP,
+                 bot_framework.Bot.Emoji.DIGIT_THREE_PLUS_COMBINING_ENCLOSING_KEYCAP,
+                 bot_framework.Bot.Emoji.DIGIT_FOUR_PLUS_COMBINING_ENCLOSING_KEYCAP,
+                 bot_framework.Bot.Emoji.DIGIT_FIVE_PLUS_COMBINING_ENCLOSING_KEYCAP,
+                 bot_framework.Bot.Emoji.DIGIT_SIX_PLUS_COMBINING_ENCLOSING_KEYCAP,
+                 bot_framework.Bot.Emoji.DIGIT_SEVEN_PLUS_COMBINING_ENCLOSING_KEYCAP,
+                 bot_framework.Bot.Emoji.DIGIT_EIGHT_PLUS_COMBINING_ENCLOSING_KEYCAP]
 
 
 auth_telegram_users = []
@@ -87,8 +89,13 @@ def search_torrent(search_term):
     response = requests.get(strike_search_url + term)
     return json.loads(response.content)['torrents'][:num_of_torrents]
 
-def download_torrent():
-    pass
+def download_torrent(torrent_for_dl):
+    response = requests.post('http://127.0.0.1:8080/command/download', {'urls': torrent_for_dl['magnet_uri']})
+    if not response.ok:
+        return False
+    return True
+
+
 
 def authenticate_user(message):
     if message.chat.id in auth_telegram_users:
@@ -111,22 +118,42 @@ def cmd_search_torrent(message, params_text):
             bot.send_message(message.chat_id, "No search parameters received - aborting operation")
             return
 
+    #get best torrents
     best_torrents = search_torrent(params_text)
-    print_torrent_options(best_torrents)
+    #print options
+    print_torrent_options(best_torrents, message.chat_id)
+    #create markup and wait for answer
+    markup = [torrent_emoji[:len(best_torrents)] + [bot_framework.Bot.Emoji.CROSS_MARK]]
+    bot.send_message(message.chat_id, "Please choose torrent to download from list", markup)
+    reply_msg, reply = bot.wait_for_message(message.chat_id, 20)
+    #parse reply
+    if not reply or reply == bot_framework.Bot.Emoji.CROSS_MARK:
+        bot.send_message(message.chat_id, "Operation aborted")
+        return
+    chosen_torrent = best_torrents[torrent_emoji.index(reply)]
+    #download chosen torrent
+    status = download_torrent(chosen_torrent)
+    #post completion message
+    if not status:
+        bot.send_message(message.chat_id, "Download failed")
+    else:
+        bot.send_message(message.chat_id, "Started torrent download")
+def generate_torrent_message(torrent, index):
+    days = get_days_ago(torrent['upload_time'])
+    if days < 1:
+        time_str = "Today"
+    elif days == 1:
+        time_str = "Yesterday"
+    else:
+        time_str = str(days) + " days ago"
+    seeds = torrent['seeds']
+    size = sizeof_fmt(int(torrent['size']))
+    return torrent_emoji[index] + torrent['torrent_title'] + "\nSeeds: " + seeds + ", Size: " + size + ", Upload time: " + time_str
 
-def print_torrent_options(best_torrents):
+def print_torrent_options(best_torrents, chat_id):
     for i in range(num_of_torrents):
-        days = get_days_ago(best_torrents[i]['upload_time'])
-        if days < 1:
-            time_str = "Today"
-        elif days == 1:
-            time_str = "Yesterday"
-        else:
-            time_str = str(days) + " days ago"
-        seeds = best_torrents[i]['seeds']
-        size = sizeof_fmt(int(best_torrents[i]['size']))
-        message = torrent_emoji[i] + best_torrents[i]['torrent_title'] + "\nSeeds: " + seeds + ", Size: " + size + ", Upload time: " + time_str
-        
+        message = generate_torrent_message(best_torrents[i], i)
+        bot.send_message(chat_id, message)
 
 
 def cmd_torrent_status(message, param_text):
@@ -179,7 +206,7 @@ def main():
     response = requests.get(strike_search_url + term)
 
     objects = json.loads(response.content)
-    #print objects['torrents']
+    print objects['torrents'][0]
     '''for o in objects['torrents']:
         date = o['upload_date']
         if " " in date:

@@ -16,6 +16,7 @@ client_port = '8080'
 timeout_for_params = 5
 client_user = 'admin'
 client_pass = 'password'
+telegram_token = None
 num_of_torrents = 8
 torrent_emoji = [bot_framework.Bot.Emoji.DIGIT_ONE_PLUS_COMBINING_ENCLOSING_KEYCAP,
                  bot_framework.Bot.Emoji.DIGIT_TWO_PLUS_COMBINING_ENCLOSING_KEYCAP,
@@ -58,6 +59,7 @@ def sizeof_fmt(num, suffix='B'):
         num /= 1024.0
     return "%.1f%s%s" % (num, 'Y', suffix)
 
+
 def get_days_ago(date_string):
     if " " in date_string:
         parsed = time.strptime(date_string, '%b %d, %Y')
@@ -67,8 +69,9 @@ def get_days_ago(date_string):
     dt = datetime.datetime.fromtimestamp(time.mktime(parsed))
     return (datetime.datetime.now() - dt).days
 
+
 def parse_config_file():
-    global client_url, client_port, client_user, client_pass
+    global client_url, client_port, client_user, client_pass, telegram_token
     tree = ET.parse(CONFIG_FILE)
 
     #client data
@@ -79,14 +82,19 @@ def parse_config_file():
     client_pass = client_data.find('pass').text
 
     #telegram data
+    telegram_token = tree.find('telegram_token').text
     for user_id in tree.iter('telegram_user_id'):
         auth_telegram_users.append(user_id.text)
 
 
 
 def search_torrent(search_term):
+    print search_term
     term = urllib.quote(search_term)
     response = requests.get(strike_search_url + term)
+
+    if 'torrents' not in json.loads(response.content):
+        return None
     return json.loads(response.content)['torrents'][:num_of_torrents]
 
 def download_torrent(torrent_for_dl):
@@ -98,12 +106,11 @@ def download_torrent(torrent_for_dl):
 
 
 def authenticate_user(message):
-    if message.chat.id in auth_telegram_users:
+    if str(message.chat.id) in auth_telegram_users:
         return True
     else:
-        bot.send_message(message.chat_id, "Unauthorized user %s %s, user id: %s. Please edit bot configuration file "
-                                          "using an authenticated account to change this." % message.chat.first_name,
-                                          message.chat.last_name, message.chat.id)
+        bot.send_message(message.chat_id, ("Unauthorized user %s %s, user id: %s. Please edit bot configuration file using an authenticated account to change this." % (message.chat.first_name,
+                                          message.chat.last_name, message.chat.id)))
         return False
 
 def cmd_search_torrent(message, params_text):
@@ -113,33 +120,42 @@ def cmd_search_torrent(message, params_text):
 
     #check if params are legal
     if not params_text:
+        bot.send_message(message.chat_id, "Please enter search term")
         param_msg, params = bot.wait_for_message(message.chat_id, timeout_for_params)
         if not params:
             bot.send_message(message.chat_id, "No search parameters received - aborting operation")
             return
+    else:
+        params = params_text
 
     #get best torrents
-    best_torrents = search_torrent(params_text)
+    best_torrents = search_torrent(params)
+    if not best_torrents:
+        bot.send_message(message.chat_id, "No torrents found for term - " + params)
+        return
+
     #print options
     print_torrent_options(best_torrents, message.chat_id)
     #create markup and wait for answer
-    markup = [torrent_emoji[:len(best_torrents)] + [bot_framework.Bot.Emoji.CROSS_MARK]]
+    #markup = [torrent_emoji[:len(best_torrents)] + [bot_framework.Bot.Emoji.CROSS_MARK]]
+    markup = [[i for i in range(len(best_torrents))] + ["X"]]
     bot.send_message(message.chat_id, "Please choose torrent to download from list", markup)
     reply_msg, reply = bot.wait_for_message(message.chat_id, 20)
     #parse reply
-    if not reply or reply == bot_framework.Bot.Emoji.CROSS_MARK:
+    if not reply or reply not in range(len(best_torrents)):
         bot.send_message(message.chat_id, "Operation aborted")
         return
-    chosen_torrent = best_torrents[torrent_emoji.index(reply)]
+    #chosen_torrent = best_torrents[torrent_emoji.index(reply)]
+    chosen_torrent = best_torrents[int(reply)]
     #download chosen torrent
     status = download_torrent(chosen_torrent)
     #post completion message
     if not status:
         bot.send_message(message.chat_id, "Download failed")
     else:
-        bot.send_message(message.chat_id, "Started torrent download")
+        bot.send_message(message.chat_id, "Started torrent download - " + chosen_torrent['torrent_title'])
 def generate_torrent_message(torrent, index):
-    days = get_days_ago(torrent['upload_time'])
+    days = get_days_ago(torrent['upload_date'])
     if days < 1:
         time_str = "Today"
     elif days == 1:
@@ -148,7 +164,8 @@ def generate_torrent_message(torrent, index):
         time_str = str(days) + " days ago"
     seeds = torrent['seeds']
     size = sizeof_fmt(int(torrent['size']))
-    return torrent_emoji[index] + torrent['torrent_title'] + "\nSeeds: " + seeds + ", Size: " + size + ", Upload time: " + time_str
+    print torrent['torrent_title']
+    return (str(index)) + ": " + torrent['torrent_title'] #+ "\nSeeds: " + seeds + ", Size: " + size + ", Upload time: " + time_str)
 
 def print_torrent_options(best_torrents, chat_id):
     for i in range(num_of_torrents):
@@ -172,6 +189,7 @@ def cmd_torrent_status(message, param_text):
             pass
 
         # include complete torrents
+        print param_text
         if param_text == 'complete':
             include_complete = True
 
@@ -180,15 +198,15 @@ def cmd_torrent_status(message, param_text):
     if not response.ok:
         response.raise_for_status()
 
-    torrent_list = ''
     for torrent in json.loads(response.content):
         if torrent['progress'] < 1 or include_complete:
-            torrent_list += '%s - %s (%s) speed:%s eta:%s status:%s\n' % (torrent['name'], str(int(torrent['progress'] * 100)) + '%',
-                                (sizeof_fmt(torrent['size'] * torrent['progress']) + '/' + sizeof_fmt(torrent['size'])),
-                                sizeof_fmt(torrent['dlspeed'], 'B/s'), eta_fmt(int(torrent['eta'])), torrent['state'])
+            torrent_list_entry = '%s - %s (%s) speed:%s eta:%s status:%s\n' % (torrent['name'], str(int(torrent['progress'] * 100)) + '%',
+                                                                               (sizeof_fmt(torrent['size'] * torrent['progress']) + '/' + sizeof_fmt(torrent['size'])),
+                                                                               sizeof_fmt(torrent['dlspeed'], 'B/s'), eta_fmt(int(torrent['eta'])), torrent['state'])
+            #print list to user
+            bot.send_message(message.chat_id, torrent_list_entry)
 
-    #print list to user
-    bot.send_message(message.chat_id, torrent_list)
+
 
 
 
@@ -200,49 +218,31 @@ def cmd_resume_all_torrents(): #me
 
 
 def main():
-    search_term = "iron man 2"
-    term = urllib.quote(search_term)
-
-    response = requests.get(strike_search_url + term)
-
-    objects = json.loads(response.content)
-    print objects['torrents'][0]
-    '''for o in objects['torrents']:
-        date = o['upload_date']
-        if " " in date:
-            parsed = time.strptime(date, '%b %d, %Y')
-            print date, "y:", parsed.tm_year, "m:", parsed.tm_mon, "d:", parsed.tm_mday
-        else:
-            c = datetime.datetime.fromtimestamp(long(date))
-            print "y:", c.year, "m:", c.month, "d:", c.day
-        pass
-'''
-    days = get_days_ago(objects['torrents'][0]['upload_date'])
-    print objects['torrents'][0]['upload_date']
-    if days < 1:
-        time_str = "Today"
-    elif days == 1:
-        time_str = "Yesterday"
-    else:
-        time_str = str(days) + " days ago"
-    print time_str
-
-    days = get_days_ago(objects['torrents'][1]['upload_date'])
-    print objects['torrents'][1
-    ]['upload_date']
-    if days < 1:
-        time_str1 = "Today"
-    elif days == 1:
-        time_str1 = "Yesterday"
-    else:
-        time_str1 = str(days) + " days ago"
-    print time_str1
-
-
+    global bot
     #parse config file
     parse_config_file()
     #setup bot commands
+    bot = bot_framework.Bot(token = telegram_token)
+    bot.add_command(cmd_name='/status', cmd_cb=cmd_torrent_status, cmd_description='Show a list of current torrents, use "/status <number>" to limit list size and "/status complete" to see finished torrents as well')
+    bot.add_command(cmd_name='/search', cmd_cb=cmd_search_torrent, cmd_description='Search for specific torrent, use "/status <term>" to search immidiatly')
     #activate bot
+    bot.activate()
+
+
+
+
+'''
+def callback(message, params):
+    bot.send_message(chat_id=message.chat_id, message=bot.Emoji.DI)
+    if not params:
+        bot.send_message(chat_id=message.chat_id, message='wrong params %s, put in number - ' % message.chat.first_name)
+        msg, params = bot.wait_for_message(chat_id=message.chat_id, timeout=10)
+
+    if not params:
+        params = 'none'
+    print 'params - ', params
+    bot.send_message(chat_id=message.chat_id, message='%s ? kthxbye' % params)
+'''
 
 
 if __name__ == "__main__":

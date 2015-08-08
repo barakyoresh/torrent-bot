@@ -3,7 +3,7 @@ import json
 import urllib
 import datetime
 import time
-
+import bot_framework
 import xml.etree.ElementTree as ET
 from dateutil.relativedelta import relativedelta
 
@@ -15,14 +15,16 @@ client_port = '8080'
 timeout_for_params = 5
 client_user = 'admin'
 client_pass = 'password'
-torrent_emoji = [bot.Emoji.DIGIT_ONE_PLUS_COMBINING_ENCLOSING_KEYCAP,
-                 bot.Emoji.DIGIT_TWO_PLUS_COMBINING_ENCLOSING_KEYCAP,
-                 bot.Emoji.DIGIT_THREE_PLUS_COMBINING_ENCLOSING_KEYCAP,
-                 bot.Emoji.DIGIT_FOUR_PLUS_COMBINING_ENCLOSING_KEYCAP,
-                 bot.Emoji.DIGIT_FIVE_PLUS_COMBINING_ENCLOSING_KEYCAP,
-                 bot.Emoji.DIGIT_SIX_PLUS_COMBINING_ENCLOSING_KEYCAP,
-                 bot.Emoji.DIGIT_SEVEN_PLUS_COMBINING_ENCLOSING_KEYCAP,
-                 bot.Emoji.DIGIT_EIGHT_PLUS_COMBINING_ENCLOSING_KEYCAP]
+telegram_token = None
+num_of_torrents = 8
+torrent_emoji = [bot_framework.Bot.Emoji.DIGIT_ONE_PLUS_COMBINING_ENCLOSING_KEYCAP,
+                 bot_framework.Bot.Emoji.DIGIT_TWO_PLUS_COMBINING_ENCLOSING_KEYCAP,
+                 bot_framework.Bot.Emoji.DIGIT_THREE_PLUS_COMBINING_ENCLOSING_KEYCAP,
+                 bot_framework.Bot.Emoji.DIGIT_FOUR_PLUS_COMBINING_ENCLOSING_KEYCAP,
+                 bot_framework.Bot.Emoji.DIGIT_FIVE_PLUS_COMBINING_ENCLOSING_KEYCAP,
+                 bot_framework.Bot.Emoji.DIGIT_SIX_PLUS_COMBINING_ENCLOSING_KEYCAP,
+                 bot_framework.Bot.Emoji.DIGIT_SEVEN_PLUS_COMBINING_ENCLOSING_KEYCAP,
+                 bot_framework.Bot.Emoji.DIGIT_EIGHT_PLUS_COMBINING_ENCLOSING_KEYCAP]
 
 
 auth_telegram_users = []
@@ -49,12 +51,14 @@ def eta_fmt(seconds):
         for attr in attrs if getattr(delta, attr)]
     return times[0] + (', ' + times[1] if len(times) > 1 else '')
 
+
 def sizeof_fmt(num, suffix='B'):
     for unit in ['','K','M','G','T','P','E','Z']:
         if abs(num) < 1024.0:
             return "%3.1f%s%s" % (num, unit, suffix)
         num /= 1024.0
     return "%.1f%s%s" % (num, 'Y', suffix)
+
 
 def get_days_ago(date_string):
     if " " in date_string:
@@ -65,8 +69,9 @@ def get_days_ago(date_string):
     dt = datetime.datetime.fromtimestamp(time.mktime(parsed))
     return (datetime.datetime.now() - dt).days
 
+
 def parse_config_file():
-    global client_url, client_port, client_user, client_pass
+    global client_url, client_port, client_user, client_pass, telegram_token
     tree = ET.parse(CONFIG_FILE)
 
     #client data
@@ -77,6 +82,7 @@ def parse_config_file():
     client_pass = client_data.find('pass').text
 
     #telegram data
+    telegram_token = tree.find('telegram_token').text
     for user_id in tree.iter('telegram_user_id'):
         auth_telegram_users.append(user_id.text)
 
@@ -91,12 +97,11 @@ def download_torrent():
     pass
 
 def authenticate_user(message):
-    if message.chat.id in auth_telegram_users:
+    if str(message.chat.id) in auth_telegram_users:
         return True
     else:
-        bot.send_message(message.chat_id, "Unauthorized user %s %s, user id: %s. Please edit bot configuration file "
-                                          "using an authenticated account to change this." % message.chat.first_name,
-                                          message.chat.last_name, message.chat.id)
+        bot.send_message(message.chat_id, ("Unauthorized user %s %s, user id: %s. Please edit bot configuration file using an authenticated account to change this." % (message.chat.first_name,
+                                          message.chat.last_name, message.chat.id)))
         return False
 
 def cmd_search_torrent(message, params_text):
@@ -145,6 +150,7 @@ def cmd_torrent_status(message, param_text):
             pass
 
         # include complete torrents
+        print param_text
         if param_text == 'complete':
             include_complete = True
 
@@ -173,49 +179,30 @@ def cmd_resume_all_torrents(): #me
 
 
 def main():
-    search_term = "iron man 2"
-    term = urllib.quote(search_term)
-
-    response = requests.get(strike_search_url + term)
-
-    objects = json.loads(response.content)
-    #print objects['torrents']
-    '''for o in objects['torrents']:
-        date = o['upload_date']
-        if " " in date:
-            parsed = time.strptime(date, '%b %d, %Y')
-            print date, "y:", parsed.tm_year, "m:", parsed.tm_mon, "d:", parsed.tm_mday
-        else:
-            c = datetime.datetime.fromtimestamp(long(date))
-            print "y:", c.year, "m:", c.month, "d:", c.day
-        pass
-'''
-    days = get_days_ago(objects['torrents'][0]['upload_date'])
-    print objects['torrents'][0]['upload_date']
-    if days < 1:
-        time_str = "Today"
-    elif days == 1:
-        time_str = "Yesterday"
-    else:
-        time_str = str(days) + " days ago"
-    print time_str
-
-    days = get_days_ago(objects['torrents'][1]['upload_date'])
-    print objects['torrents'][1
-    ]['upload_date']
-    if days < 1:
-        time_str1 = "Today"
-    elif days == 1:
-        time_str1 = "Yesterday"
-    else:
-        time_str1 = str(days) + " days ago"
-    print time_str1
-
-
+    global bot
     #parse config file
     parse_config_file()
     #setup bot commands
+    bot = bot_framework.Bot(token = telegram_token)
+    bot.add_command(cmd_name='/status', cmd_cb=cmd_torrent_status, cmd_description='Show a list of current torrents, use "/status <number>" to limit list size and "/status complete" to see finished torrents as well')
     #activate bot
+    bot.activate()
+
+
+
+
+'''
+def callback(message, params):
+    bot.send_message(chat_id=message.chat_id, message=bot.Emoji.DI)
+    if not params:
+        bot.send_message(chat_id=message.chat_id, message='wrong params %s, put in number - ' % message.chat.first_name)
+        msg, params = bot.wait_for_message(chat_id=message.chat_id, timeout=10)
+
+    if not params:
+        params = 'none'
+    print 'params - ', params
+    bot.send_message(chat_id=message.chat_id, message='%s ? kthxbye' % params)
+'''
 
 
 if __name__ == "__main__":

@@ -123,9 +123,10 @@ def print_torrent_options(best_torrents):
             time_str = "Yesterday"
         else:
             time_str = str(days) + " days ago"
-        #seeds = best_torrents[i]['seeds']
-        #size = sizeof_fmt(int(best_torrents[i]['size']))
-        #message = torrent_emoji[i] + best_torrents[i]['torrent_title'] + "\nSeeds: " + best_torrents[i]['seeds'] + ", Size: " #+ sizeof_fmt(int(best_torrents[i]['size'])) + ", "
+        seeds = best_torrents[i]['seeds']
+        size = sizeof_fmt(int(best_torrents[i]['size']))
+        message = torrent_emoji[i] + best_torrents[i]['torrent_title'] + "\nSeeds: " + seeds + ", Size: " + size + ", Upload time: " + time_str
+        
 
 
 def cmd_torrent_status(message, param_text):

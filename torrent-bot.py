@@ -225,43 +225,52 @@ def cmd_torrent_status(message, param_text):
         return
 
     include_complete = False
-    list_entires = 50
 
     #handle secret params
     if param_text:
-        # number - limit entry count
-        try:
-            list_entires = abs(int(param_text))
-        except:
-            pass
-
-        # include complete torrents
-        print param_text
         if param_text == 'complete':
             include_complete = True
 
     #get list
-    response = requests.get(client_url + ':' + client_port + '/query/torrents')
-    if not response.ok:
-        response.raise_for_status()
+    success, torrents = torrent_status()
 
-    for torrent in json.loads(response.content):
+    if not success:
+        bot.send_message(message.chat_id, 'Failed getting torrent status :(')
+        return
+
+    for torrent in torrents:
         if torrent['progress'] < 1 or include_complete:
-            torrent_list_entry = '%s - %s (%s) speed:%s eta:%s status:%s\n' % (torrent['name'], str(int(torrent['progress'] * 100)) + '%',
+            torrent_list_entry = '%s\n%s (%s)\nspeed:%s\neta:%s\nstatus:%s' % (torrent['name'], str(int(torrent['progress'] * 100)) + '%',
                                                                                (sizeof_fmt(torrent['size'] * torrent['progress']) + '/' + sizeof_fmt(torrent['size'])),
                                                                                sizeof_fmt(torrent['dlspeed'], 'B/s'), eta_fmt(int(torrent['eta'])), torrent['state'])
-            #print list to user
+            #print list entry to user
             bot.send_message(message.chat_id, torrent_list_entry)
 
 
+def torrent_status():
+    response = requests.get(client_url + ':' + client_port + '/query/torrents')
+    if not response.ok:
+        return False, {}
+    return True, json.loads(response.content)
 
 
+def cmd_pause_all_torrents(message, param_text):
+    response = requests.post(client_url + ':' + client_port + '/command/pauseall')
+    if not response.ok:
+        # shouldn't occur, change to phyisically cheking all torrents stopped
+        print response
+        bot.send_message(message.chat_id, "Failed pausing torrents :(")
+        return
+    bot.send_message(message.chat_id, "All torrents paused.")
 
-def cmd_pause_all_torrents(): #me
-    pass
 
-def cmd_resume_all_torrents(): #me
-    pass
+def cmd_resume_all_torrents(message, param_text):
+    response = requests.post(client_url + ':' + client_port + '/command/resumeall')
+    if not response.ok:
+        # shouldn't occur, change to phyisically cheking all torrents stopped
+        bot.send_message(message.chat_id, "Failed resuming torrents :(")
+        return
+    bot.send_message(message.chat_id, "All torrents resumed.")
 
 
 def main():
@@ -272,6 +281,10 @@ def main():
     bot = bot_framework.Bot(token = telegram_token)
     bot.add_command(cmd_name='/status', cmd_cb=cmd_torrent_status, cmd_description='Show a list of current torrents, use "/status <number>" to limit list size and "/status complete" to see finished torrents as well')
     bot.add_command(cmd_name='/search', cmd_cb=cmd_search_torrent, cmd_description='Search for specific torrent, use "/status <term>" to search immidiatly')
+    bot.add_command(cmd_name='/pause', cmd_cb=cmd_pause_all_torrents, cmd_description='Pauses all downloading torrents')
+    bot.add_command(cmd_name='/resume', cmd_cb=cmd_resume_all_torrents, cmd_description='Resumes all downloading torrents')
+
+
     #activate bot
     bot.activate()
 

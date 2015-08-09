@@ -240,7 +240,7 @@ def cmd_torrent_status(message, param_text):
 
     for torrent in torrents:
         if torrent['progress'] < 1 or include_complete:
-            torrent_list_entry = '%s\n%s (%s)\nspeed:%s\neta:%s\nstatus:%s' % (torrent['name'], str(int(torrent['progress'] * 100)) + '%',
+            torrent_list_entry = '%s\nProgress: %s (%s)\nSpeed: %s\nETA: %s\nStatus: %s' % (torrent['name'], str(int(torrent['progress'] * 100)) + '%',
                                                                                (sizeof_fmt(torrent['size'] * torrent['progress']) + '/' + sizeof_fmt(torrent['size'])),
                                                                                sizeof_fmt(torrent['dlspeed'], 'B/s'), eta_fmt(int(torrent['eta'])), torrent['state'])
             #print list entry to user
@@ -283,7 +283,6 @@ def main():
     bot.add_command(cmd_name='/search', cmd_cb=cmd_search_torrent, cmd_description='Search for specific torrent, use "/status <term>" to search immidiatly')
     bot.add_command(cmd_name='/pause', cmd_cb=cmd_pause_all_torrents, cmd_description='Pauses all downloading torrents')
     bot.add_command(cmd_name='/resume', cmd_cb=cmd_resume_all_torrents, cmd_description='Resumes all downloading torrents')
-
 
     #activate bot
     bot.activate()

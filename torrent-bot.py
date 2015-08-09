@@ -151,13 +151,12 @@ def cmd_search_torrent(message, params_text):
     reply_msg, reply = bot.wait_for_message(message.chat_id, 20)
 
     #parse reply
-    if not reply or reply not in range(len(best_torrents)) or reply not in torrent_emoji:
+    print reply
+    if not reply or int(reply) not in range(len(best_torrents)):
         bot.send_message(message.chat_id, "Operation aborted", None)
         return
-    if reply in torrent_emoji:
-        chosen_torrent = best_torrents[torrent_emoji.index(reply)]
-    else:
-        chosen_torrent = best_torrents[int(reply) - 1]
+
+    chosen_torrent = best_torrents[int(reply) - 1]
 
     #download chosen torrent
     status = download_torrent(chosen_torrent)

@@ -4,7 +4,8 @@ import urllib
 import datetime
 import time
 import bot_framework
-
+import unicodedata
+import telegram
 import xml.etree.ElementTree as ET
 from dateutil.relativedelta import relativedelta
 
@@ -40,6 +41,11 @@ for torrent in json.loads(response.content):
     if torrent['progress'] >= 0:
         print torrent['name']
 '''
+
+def strip_accents(s):
+   return ''.join(c for c in unicodedata.normalize('NFD', s)
+                  if unicodedata.category(c) != 'Mn')
+
 
 def eta_fmt(seconds):
     if seconds <= 0:
@@ -134,19 +140,25 @@ def cmd_search_torrent(message, params_text):
         bot.send_message(message.chat_id, "No torrents found for term - " + params)
         return
 
-    #print options
+    #print optionsX
     print_torrent_options(best_torrents, message.chat_id)
     #create markup and wait for answer
-    #markup = [torrent_emoji[:len(best_torrents)] + [bot_framework.Bot.Emoji.CROSS_MARK]]
-    markup = [[i for i in range(len(best_torrents))] + ["X"]]
+    keyboard = [[str((i + 1)) for i in range(len(best_torrents))] + [bot_framework.Bot.Emoji.CROSS_MARK]]
+
+    markup = telegram.ReplyKeyboardMarkup(keyboard)
+
     bot.send_message(message.chat_id, "Please choose torrent to download from list", markup)
     reply_msg, reply = bot.wait_for_message(message.chat_id, 20)
+
     #parse reply
-    if not reply or reply not in range(len(best_torrents)):
-        bot.send_message(message.chat_id, "Operation aborted")
+    if not reply or reply not in range(len(best_torrents)) or reply not in torrent_emoji:
+        bot.send_message(message.chat_id, "Operation aborted", None)
         return
-    #chosen_torrent = best_torrents[torrent_emoji.index(reply)]
-    chosen_torrent = best_torrents[int(reply)]
+    if reply in torrent_emoji:
+        chosen_torrent = best_torrents[torrent_emoji.index(reply)]
+    else:
+        chosen_torrent = best_torrents[int(reply) - 1]
+
     #download chosen torrent
     status = download_torrent(chosen_torrent)
     #post completion message
@@ -154,6 +166,8 @@ def cmd_search_torrent(message, params_text):
         bot.send_message(message.chat_id, "Download failed")
     else:
         bot.send_message(message.chat_id, "Started torrent download - " + chosen_torrent['torrent_title'])
+
+
 def generate_torrent_message(torrent, index):
     days = get_days_ago(torrent['upload_date'])
     if days < 1:
@@ -164,8 +178,9 @@ def generate_torrent_message(torrent, index):
         time_str = str(days) + " days ago"
     seeds = torrent['seeds']
     size = sizeof_fmt(int(torrent['size']))
-    print torrent['torrent_title']
-    return (str(index)) + ": " + torrent['torrent_title'] #+ "\nSeeds: " + seeds + ", Size: " + size + ", Upload time: " + time_str)
+    title = strip_accents(torrent['torrent_title'])
+
+    return torrent_emoji[index] + (": " + title + "\nSeeds: " + str(seeds) + "\nSize: " + size + "\nUpload time: " + time_str).encode('UTF8')
 
 def print_torrent_options(best_torrents, chat_id):
     for i in range(num_of_torrents):

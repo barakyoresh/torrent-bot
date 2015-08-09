@@ -3,6 +3,8 @@
 ### PhpStorm ###
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm
 
+config.py
+
 *.iml
 
 ## Directory-based project format:

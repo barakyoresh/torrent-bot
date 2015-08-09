@@ -150,19 +150,23 @@ def cmd_search_torrent(message, params_text):
     print_torrent_options(best_torrents, message.chat_id)
     #create markup and wait for answer
     keyboard = [[str((i + 1)) for i in range(len(best_torrents))] + [bot_framework.Bot.Emoji.CROSS_MARK]]
-    print keyboard
     print len(best_torrents)
+
     markup = bot_framework.Bot.create_markup(keyboard)
 
     bot.send_message(message.chat_id, "Please choose torrent to download from list", markup)
     reply_msg, reply = bot.wait_for_message(message.chat_id, 20)
 
-    markup = bot_framework.Bot.create_markup()
-
     #parse reply
-    if not reply or int(reply) not in range(len(best_torrents)):
-        bot.send_message(message.chat_id, "Operation aborted", markup)
+    try:
+        int(reply)
+        if not reply or int(reply) not in range(len(best_torrents) + 1):
+            bot.send_message(message.chat_id, "Operation aborted")
+            return
+    except ValueError:
+        bot.send_message(message.chat_id, "Operation aborted")
         return
+
 
     chosen_torrent = best_torrents[int(reply) - 1]
 
@@ -170,12 +174,13 @@ def cmd_search_torrent(message, params_text):
     status = download_torrent(chosen_torrent)
     #post completion message
     if not status:
-        bot.send_message(message.chat_id, "Download failed", markup)
+        bot.send_message(message.chat_id, "Download failed")
     else:
-        bot.send_message(message.chat_id, "Started torrent download - " + chosen_torrent['torrent_title'], markup)
+        bot.send_message(message.chat_id, "Started torrent download - " + chosen_torrent['torrent_title'])
 
 
 def generate_torrent_message(torrent, index):
+
     days = get_days_ago(torrent['upload_date'])
 
     if 'torrent_title' not in torrent:
@@ -202,7 +207,12 @@ def generate_torrent_message(torrent, index):
     else:
         size_str = "\nSize: " + sizeof_fmt(int(torrent['size']))
 
-    return torrent_emoji[index] + (": " + title + seeds_str + size_str + time_str).encode('UTF8')
+    if 'torrent_category' not in torrent:
+        cat_str = ""
+    else:
+        cat_str = "\nCategory: " + str(torrent['torrent_category'])
+
+    return torrent_emoji[index] + (": " + title + seeds_str + size_str + cat_str + time_str).encode('UTF8')
 
 def print_torrent_options(best_torrents, chat_id):
     for i in range(len(best_torrents)):

@@ -3,7 +3,7 @@
 ### PhpStorm ###
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm
 
-config.py
+config.xml
 
 *.iml
 

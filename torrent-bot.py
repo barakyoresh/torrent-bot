@@ -5,7 +5,7 @@ import datetime
 import time
 import bot_framework
 import unicodedata
-import telegram
+
 import xml.etree.ElementTree as ET
 from dateutil.relativedelta import relativedelta
 
@@ -30,6 +30,8 @@ torrent_emoji = [bot_framework.Bot.Emoji.DIGIT_ONE_PLUS_COMBINING_ENCLOSING_KEYC
 
 
 auth_telegram_users = []
+
+
 
 '''
 #example usage
@@ -67,10 +69,11 @@ def sizeof_fmt(num, suffix='B'):
 
 
 def get_days_ago(date_string):
+    print date_string
     if " " in date_string:
         parsed = time.strptime(date_string, '%b %d, %Y')
     else:
-        parsed = datetime.datetime.fromtimestamp(long(date_string))
+        return None
 
     dt = datetime.datetime.fromtimestamp(time.mktime(parsed))
     return (datetime.datetime.now() - dt).days
@@ -121,6 +124,7 @@ def authenticate_user(message):
 
 def cmd_search_torrent(message, params_text):
     #authenticate user
+    default_mu = bot_framework.Bot.create_markup()
     if not authenticate_user(message):
         return
 
@@ -134,27 +138,35 @@ def cmd_search_torrent(message, params_text):
     else:
         params = params_text
 
+
+
     #get best torrents
     best_torrents = search_torrent(params)
     if not best_torrents:
-        bot.send_message(message.chat_id, "No torrents found for term - " + params)
+        bot.send_message(message.chat_id, "No torrents found for term - " + params, default_mu)
         return
 
     #print optionsX
     print_torrent_options(best_torrents, message.chat_id)
     #create markup and wait for answer
     keyboard = [[str((i + 1)) for i in range(len(best_torrents))] + [bot_framework.Bot.Emoji.CROSS_MARK]]
+    print len(best_torrents)
 
-    markup = telegram.ReplyKeyboardMarkup(keyboard)
+    markup = bot_framework.Bot.create_markup(keyboard)
 
     bot.send_message(message.chat_id, "Please choose torrent to download from list", markup)
     reply_msg, reply = bot.wait_for_message(message.chat_id, 20)
 
     #parse reply
-    print reply
-    if not reply or int(reply) not in range(len(best_torrents)):
-        bot.send_message(message.chat_id, "Operation aborted", None)
+    try:
+        int(reply)
+        if not reply or int(reply) not in range(len(best_torrents) + 1):
+            bot.send_message(message.chat_id, "Operation aborted")
+            return
+    except ValueError:
+        bot.send_message(message.chat_id, "Operation aborted")
         return
+
 
     chosen_torrent = best_torrents[int(reply) - 1]
 
@@ -168,24 +180,45 @@ def cmd_search_torrent(message, params_text):
 
 
 def generate_torrent_message(torrent, index):
-    days = get_days_ago(torrent['upload_date'])
-    if days < 1:
-        time_str = "Today"
-    elif days == 1:
-        time_str = "Yesterday"
-    else:
-        time_str = str(days) + " days ago"
-    seeds = torrent['seeds']
-    size = sizeof_fmt(int(torrent['size']))
-    title = strip_accents(torrent['torrent_title'])
 
-    return torrent_emoji[index] + (": " + title + "\nSeeds: " + str(seeds) + "\nSize: " + size + "\nUpload time: " + time_str).encode('UTF8')
+    days = get_days_ago(torrent['upload_date'])
+
+    if 'torrent_title' not in torrent:
+        return None
+    else:
+        title = strip_accents(torrent['torrent_title'])
+
+    if not days:
+       time_str = ""
+    elif days < 1:
+        time_str = "\nUpload time: Today"
+    elif days == 1:
+        time_str = "\nUpload time: Yesterday"
+    else:
+        time_str = "\nUpload time: " + str(days) + " days ago"
+
+    if 'seeds' not in torrent:
+        seeds_str = ""
+    else:
+        seeds_str = "\nSeeds: " + str(torrent['seeds'])
+
+    if 'size' not in torrent:
+        size_str = ""
+    else:
+        size_str = "\nSize: " + sizeof_fmt(int(torrent['size']))
+
+    if 'torrent_category' not in torrent:
+        cat_str = ""
+    else:
+        cat_str = "\nCategory: " + str(torrent['torrent_category'])
+
+    return torrent_emoji[index] + (": " + title + seeds_str + size_str + cat_str + time_str).encode('UTF8')
 
 def print_torrent_options(best_torrents, chat_id):
-    for i in range(num_of_torrents):
+    for i in range(len(best_torrents)):
         message = generate_torrent_message(best_torrents[i], i)
-        bot.send_message(chat_id, message)
-
+        if message:
+            bot.send_message(chat_id, message)
 
 def cmd_torrent_status(message, param_text):
     if not authenticate_user(message):

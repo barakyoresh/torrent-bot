@@ -255,6 +255,7 @@ def torrent_status():
 
 
 def cmd_pause_all_torrents(message, param_text):
+    #TODO: find out why this command isnt recognized
     response = requests.post(client_url + ':' + client_port + '/command/pauseall')
     if not response.ok:
         # shouldn't occur, change to phyisically cheking all torrents stopped
@@ -265,6 +266,7 @@ def cmd_pause_all_torrents(message, param_text):
 
 
 def cmd_resume_all_torrents(message, param_text):
+    #TODO: find out why this command isnt recognized
     response = requests.post(client_url + ':' + client_port + '/command/resumeall')
     if not response.ok:
         # shouldn't occur, change to phyisically cheking all torrents stopped
@@ -273,16 +275,99 @@ def cmd_resume_all_torrents(message, param_text):
     bot.send_message(message.chat_id, "All torrents resumed.")
 
 
+def delete_torrent(hash):
+    response = requests.post(client_url + ':' + client_port + '/command/delete', {'hashes' : hash})
+    if not response.ok:
+        return False
+    return True
+
+
+def cmd_delete_torrent(message, param_text):
+    try:
+        index_to_delete = int(param_text) -1
+    except:
+        index_to_delete = -1
+
+
+    #get list
+    success, torrents = torrent_status()
+
+    if not success:
+        bot.send_message(message.chat_id, 'Failed getting torrent list :(')
+        return
+
+    active_torrents = [tor for tor in torrents if tor['progress'] < 1]
+
+    if not active_torrents:
+        bot.send_message(message.chat_id, 'No active torrents to remove')
+        return
+
+    hash_list = [tor['hash'] for tor in active_torrents]
+    index_to_hash = dict(zip(range(0, len(hash_list)), hash_list))
+
+
+    print param_text, index_to_delete, index_to_hash, index_to_delete in index_to_hash
+
+    # if param is a relevant index
+    if index_to_delete in index_to_hash:
+        success = delete_torrent(index_to_hash[index_to_delete])
+        if success:
+            bot.send_message(message.chat_id, 'Torrent deleted succesfully -\n' + active_torrents[index_to_delete]['name'])
+            return
+        else:
+            bot.send_message(message.chat_id, 'Failed to delete torrent')
+            return
+    # if no param or irrelevant param index
+    else:
+        for torrent, index in zip(active_torrents, range(1, len(torrents))):
+            torrent_list_entry = '%s - %s' % (index, torrent['name'])
+            #print list entry to user
+            bot.send_message(message.chat_id, torrent_list_entry)
+
+        #create markup and wait for answer
+        keyboard = [[str((i + 1)) for i in range(len(index_to_hash))] + [bot_framework.Bot.Emoji.CROSS_MARK]]
+        print len(index_to_hash)
+
+        #markup = bot_framework.Bot.create_markup(keyboard)
+
+        bot.send_message(message.chat_id, "Choose which torrent to remove:")#, markup)
+        reply_msg, reply = bot.wait_for_message(message.chat_id, 20)
+
+        #parse reply
+        try:
+            index = int(reply) - 1
+            if index not in index_to_hash:
+                bot.send_message(message.chat_id, "Operation aborted")
+                return
+        except ValueError:
+            bot.send_message(message.chat_id, "Operation aborted")
+            return
+
+
+        success = delete_torrent(index_to_hash[index])
+        if success:
+            bot.send_message(message.chat_id, 'Torrent deleted succesfully -\n' + active_torrents[index]['name'])
+            return
+        else:
+            bot.send_message(message.chat_id, 'Failed to delete torrent')
+            return
+
+
+
+
+
+
 def main():
     global bot
     #parse config file
     parse_config_file()
     #setup bot commands
     bot = bot_framework.Bot(token = telegram_token)
-    bot.add_command(cmd_name='/status', cmd_cb=cmd_torrent_status, cmd_description='Show a list of current torrents, use "/status <number>" to limit list size and "/status complete" to see finished torrents as well')
+    bot.add_command(cmd_name='/status', cmd_cb=cmd_torrent_status, cmd_description='Show a list of current torrents, use "/status complete" to see finished torrents as well')
     bot.add_command(cmd_name='/search', cmd_cb=cmd_search_torrent, cmd_description='Search for specific torrent, use "/status <term>" to search immidiatly')
     bot.add_command(cmd_name='/pause', cmd_cb=cmd_pause_all_torrents, cmd_description='Pauses all downloading torrents')
     bot.add_command(cmd_name='/resume', cmd_cb=cmd_resume_all_torrents, cmd_description='Resumes all downloading torrents')
+    bot.add_command(cmd_name='/delete', cmd_cb=cmd_delete_torrent, cmd_description='Deletes a specific torrent, use "/delete <number> to delete immidiatly')
 
     #activate bot
     bot.activate()
